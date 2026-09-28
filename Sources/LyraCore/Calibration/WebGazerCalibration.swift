@@ -77,6 +77,7 @@ public final class WebGazerCalibration: @unchecked Sendable {
     // MARK: - Init
 
     public init(
+        pattern: CalibrationPattern = .webGazer9,
         clicksPerPoint: Int = 5,
         verificationDuration: Double = 3.5,
         frameBufferLimit: Int = 20,
@@ -89,8 +90,7 @@ public final class WebGazerCalibration: @unchecked Sendable {
         self.minimumFrames = max(minimumFrames, 2)
         self.clickTolerancePoints = clickTolerancePoints
 
-        // 3×3 grid: uses CalibrationPattern.webGazer9 for safe screen positioning
-        self.points = CalibrationPattern.webGazer9.points.map {
+        self.points = pattern.points.map {
             PointState(
                 id: $0.id,
                 x: $0.x,

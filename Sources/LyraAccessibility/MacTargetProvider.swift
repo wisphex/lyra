@@ -48,14 +48,14 @@ public final class MacTargetProvider: TargetProvider, @unchecked Sendable {
         // after, so it never adds to the sweep's latency.
         async let accessibilityCandidates = accessibility.snapshotTargets()
         let stripCandidates = strip.scan(screenSize: size)
+        let openWindowCandidates = strip.scanOpenWindows(screenSize: size)
 
         let captured = await accessibilityCandidates
 
-        // Strip candidates go first so that, when a thumbnail and an accessibility
-        // element cover the same point, the resolver's tie-breaking does not have to
-        // decide: the strip is the surface the user can actually see there.
+        // Strip thumbnails and open application windows take priority over raw accessibility controls
+        // for high-level macro window and surface navigation.
         return TargetSnapshot(
-            candidates: stripCandidates + captured.candidates,
+            candidates: stripCandidates + openWindowCandidates + captured.candidates,
             screenSize: size
         )
     }

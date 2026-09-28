@@ -108,7 +108,14 @@ public final class OverlayWindowManager {
     }
 
     private func showIndicatorWindow(viewModel: AppViewModel) {
-        guard indicatorWindow == nil, let screen = targetScreen else { return }
+        if let window = indicatorWindow {
+            guard let screen = targetScreen else { return }
+            window.setFrame(screen.frame, display: true)
+            window.orderFrontRegardless()
+            return
+        }
+
+        guard let screen = targetScreen else { return }
 
         let window = NSWindow(
             contentRect: screen.frame,
@@ -116,9 +123,13 @@ public final class OverlayWindowManager {
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: GazeIndicatorOverlay(viewModel: viewModel)
         )
+        if #available(macOS 13.0, *) {
+            hostingController.safeAreaRegions = []
+        }
+        window.contentViewController = hostingController
 
         // Same reason as `showCalibrationWindow`, and the same silent failure: without
         // this the window collapsed to the size of the dot it draws (66x73), so the
@@ -136,6 +147,12 @@ public final class OverlayWindowManager {
         window.orderFrontRegardless()
 
         self.indicatorWindow = window
+    }
+
+    /// Re-anchors the indicator overlay window to the active screen frame.
+    public func updateIndicatorFrame() {
+        guard let screen = targetScreen, let window = indicatorWindow else { return }
+        window.setFrame(screen.frame, display: true)
     }
 
     private func closeIndicatorWindow() {

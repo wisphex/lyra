@@ -92,6 +92,23 @@ public struct CalibrationPattern: Sendable {
 
     public static let ninePoint = webGazer9
 
+    /// Macro targets matching macOS functional zones: Top Left, Top Center, Top Right, Stage Manager, Middle, Right Workspace, Bottom Left (Dock), Bottom Center (Dock), and Bottom Right (Dock).
+    public static let macro5 = CalibrationPattern(
+        points: [
+            Point(id: 0, x: 0.12, y: 0.08),  // Top Left (Apple & App Menu)
+            Point(id: 1, x: 0.50, y: 0.08),  // Top Center (Menu Bar)
+            Point(id: 2, x: 0.88, y: 0.08),  // Top Right (Control Center & Status)
+            Point(id: 3, x: 0.08, y: 0.50),  // Left Edge (Stage Manager)
+            Point(id: 4, x: 0.50, y: 0.50),  // Middle (Center Open Window)
+            Point(id: 5, x: 0.92, y: 0.50),  // Right Workspace
+            Point(id: 6, x: 0.12, y: 0.82),  // Bottom Left (Dock Left)
+            Point(id: 7, x: 0.50, y: 0.82),  // Bottom Center (Dock Center)
+            Point(id: 8, x: 0.88, y: 0.82)   // Bottom Right (Dock Right / Trash)
+        ],
+        name: "Macro Zones (Menu Bar • Stage Manager • Dock • Windows)",
+        holdDuration: 0
+    )
+
     /// 16 points in a 4x4 grid, for click-driven calibration.
     ///
     /// Coverage matters more than replication here. The fit has ~20 terms, and what

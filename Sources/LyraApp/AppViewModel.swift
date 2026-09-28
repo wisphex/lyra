@@ -26,6 +26,7 @@ public final class AppViewModel: ObservableObject {
     @Published public private(set) var previewImage: CGImage?
 
     public enum CalibrationMode: String, CaseIterable, Identifiable, Sendable {
+        case macroZones5
         case webGazer9
         case adaptive
         case click
@@ -33,6 +34,7 @@ public final class AppViewModel: ObservableObject {
         public var id: String { rawValue }
         public var title: String {
             switch self {
+            case .macroZones5: return "Macro Zones (Menu Bar • Stage Manager • Dock • Windows)"
             case .webGazer9: return "WebGazer 9-Point (3×3 Grid • 45 Clicks)"
             case .adaptive: return "3-Stage Smart (Corners → Ball → Polish)"
             case .click: return "Click Dots (16 dots, 64 clicks)"
@@ -40,7 +42,7 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    @Published public var calibrationMode: CalibrationMode = .webGazer9
+    @Published public var calibrationMode: CalibrationMode = .macroZones5
     @Published public private(set) var calibrationStage: CalibrationStage = .idle
     @Published public private(set) var webGazerProgress: WebGazerCalibration.Progress?
     @Published public private(set) var calibrationProgress: ClickCalibration.Progress?
@@ -103,6 +105,7 @@ public final class AppViewModel: ObservableObject {
     /// What the intro screen is offering.
     public var calibrationPointCount: Int {
         switch calibrationMode {
+        case .macroZones5: return CalibrationPattern.macro5.points.count
         case .webGazer9: return 9
         case .adaptive: return 5
         case .click: return CalibrationPattern.click.points.count
@@ -112,6 +115,7 @@ public final class AppViewModel: ObservableObject {
     /// How many clicks the offered run asks for in total.
     public var calibrationClickCount: Int {
         switch calibrationMode {
+        case .macroZones5: return calibrationPointCount * 5
         case .webGazer9: return 45
         case .adaptive: return 5
         case .click: return calibrationPointCount * Self.clicksPerPoint
@@ -129,12 +133,18 @@ public final class AppViewModel: ObservableObject {
         didSet { overlays.setIndicatorVisible(showGazeOverlay, viewModel: self) }
     }
 
-    /// Whether the lens opens by itself on a cluster of small controls. Defaults on,
-    /// because that is the behaviour that makes the thing usable without teaching anyone
-    /// a command first — but it is the kind of help that becomes irritating when it is
-    /// wrong, so it has to be one click from off.
-    @Published public var autoLensEnabled = true {
+    /// Whether the lens opens by itself on a cluster of small controls. Disabled by default
+    /// in favor of clean in-place contextual region highlighting.
+    @Published public var autoLensEnabled = false {
         didSet { Task { await coordinator.setAutoLensEnabled(autoLensEnabled) } }
+    }
+
+    /// Whether in-place contextual region highlighting (menu bar, status icons, Stage Manager, Dock) is enabled.
+    @Published public var contextualHighlightingEnabled = true {
+        didSet {
+            UserDefaults.standard.set(contextualHighlightingEnabled, forKey: "com.lyra.contextualHighlightingEnabled")
+            Task { await coordinator.setContextualHighlightingEnabled(contextualHighlightingEnabled) }
+        }
     }
 
     /// Steering mode: pure eye gaze tracking (default and standard).
@@ -290,11 +300,15 @@ public final class AppViewModel: ObservableObject {
         self.invertNoseX = false
         self.invertNoseY = false
         self.continuousTrainingEnabled = false
-        Task { [sync = self.syncSystemCursor] in
+        self.autoLensEnabled = false
+        self.contextualHighlightingEnabled = UserDefaults.standard.object(forKey: "com.lyra.contextualHighlightingEnabled") as? Bool ?? true
+        Task { [sync = self.syncSystemCursor, contextHigh = self.contextualHighlightingEnabled] in
             await coordinator.setSteeringMode(.gazeOnly)
             await coordinator.setNoseFineTune(enabled: false, sensitivity: 2.0, invertX: false, invertY: false)
             await coordinator.setSyncSystemCursor(sync)
             await coordinator.setContinuousTrainingEnabled(false)
+            await coordinator.setAutoLensEnabled(false)
+            await coordinator.setContextualHighlightingEnabled(contextHigh)
         }
 
         // Passive click monitoring disabled per product requirements (eye-tracking only)
@@ -329,6 +343,7 @@ public final class AppViewModel: ObservableObject {
 
     private func handleDisplayChange() {
         updateScreenSize()
+        overlays.updateIndicatorFrame()
         revalidateCalibration()
     }
 
@@ -467,8 +482,9 @@ public final class AppViewModel: ObservableObject {
             Task { @MainActor [weak self] in self?.ingest(features) }
         }
 
-        if calibrationMode == .webGazer9 {
-            let run = WebGazerCalibration(clicksPerPoint: 5, verificationDuration: 3.5)
+        if calibrationMode == .macroZones5 || calibrationMode == .webGazer9 {
+            let pattern = (calibrationMode == .macroZones5) ? CalibrationPattern.macro5 : CalibrationPattern.webGazer9
+            let run = WebGazerCalibration(pattern: pattern, clicksPerPoint: 5, verificationDuration: 3.5)
             webGazerRun = run
             calibrationStage = .running
             webGazerProgress = run.progress
@@ -565,7 +581,7 @@ public final class AppViewModel: ObservableObject {
     /// Records a direct click on a WebGazer point dot by index.
     public func handleCalibrationClick(pointIndex: Int) {
         guard calibrationStage == .running else { return }
-        if calibrationMode == .webGazer9, let run = webGazerRun {
+        if (calibrationMode == .macroZones5 || calibrationMode == .webGazer9), let run = webGazerRun {
             run.registerClick(pointIndex: pointIndex)
             webGazerProgress = run.progress
             if run.isAllPointsComplete {
@@ -578,7 +594,7 @@ public final class AppViewModel: ObservableObject {
     public func handleCalibrationClick(atNormalized location: CGPoint) {
         guard calibrationStage == .running else { return }
 
-        if calibrationMode == .webGazer9, let run = webGazerRun {
+        if (calibrationMode == .macroZones5 || calibrationMode == .webGazer9), let run = webGazerRun {
             let size = NSScreen.main?.frame.size ?? CGSize(width: 1512, height: 982)
             run.registerClick(
                 atNormalized: (x: Double(location.x), y: Double(location.y)),
@@ -621,7 +637,7 @@ public final class AppViewModel: ObservableObject {
     private func ingest(_ features: GazeFeatures) {
         latestFeatures = features
         guard isCalibrating else { return }
-        if calibrationMode == .webGazer9 {
+        if calibrationMode == .macroZones5 || calibrationMode == .webGazer9 {
             webGazerRun?.observe(features: features)
         } else if calibrationMode == .adaptive {
             adaptiveRun?.observe(features: features)

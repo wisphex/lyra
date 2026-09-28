@@ -170,6 +170,71 @@ public struct StripScanner: Sendable {
         return unique
     }
 
+    /// Scans for visible application windows open on the desktop (excluding Stage Manager strip thumbnails).
+    public func openWindows(screenSize: LyraSize, excludingPid pid: pid_t = getpid()) -> [Thumbnail] {
+        let onLeft = !Self.isStripOnRightEdge
+        let band = Self.isStageManagerEnabled ? (screenSize.width * bandFraction) : 0.0
+
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let raw = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+
+        var found: [Thumbnail] = []
+        for entry in raw {
+            guard let ownerPid = entry[kCGWindowOwnerPID as String] as? pid_t, ownerPid != pid else { continue }
+            guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+            guard let owner = entry[kCGWindowOwnerName as String] as? String else { continue }
+            guard !Self.systemOwners.contains(owner) else { continue }
+            guard let bounds = entry[kCGWindowBounds as String] as? [String: CGFloat],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { continue }
+
+            let frame = LyraRect(
+                x: Double(rect.minX),
+                y: Double(rect.minY),
+                width: Double(rect.width),
+                height: Double(rect.height)
+            )
+
+            // Must be large enough to be an interactive application window
+            guard frame.width >= 160, frame.height >= 120 else { continue }
+
+            // Exclude windows parked in the Stage Manager strip
+            if Self.isStageManagerEnabled {
+                if onLeft && frame.maxX <= band { continue }
+                if !onLeft && frame.minX >= screenSize.width - band { continue }
+            }
+
+            let title = entry[kCGWindowName as String] as? String
+            found.append(Thumbnail(ownerName: owner, title: title, frame: frame))
+        }
+
+        return found
+    }
+
+    /// Builds TargetCandidate entries for every open application window on the workspace.
+    public func scanOpenWindows(screenSize: LyraSize, excludingPid pid: pid_t = getpid()) -> [TargetCandidate] {
+        return openWindows(screenSize: screenSize, excludingPid: pid).enumerated().map { index, window in
+            let identifier = [
+                "window",
+                window.ownerName,
+                "\(Int(window.frame.x)),\(Int(window.frame.y))",
+                "\(index)"
+            ].joined(separator: "|")
+
+            return TargetCandidate(
+                id: identifier,
+                frame: window.frame,
+                label: window.displayName,
+                role: "AXWindow",
+                source: .screenRegion,
+                depth: 1,
+                isActionable: true,
+                action: .press
+            )
+        }
+    }
+
     /// Processes that own on-screen windows without being applications a user can switch
     /// to. They never appear in the strip.
     private static let systemOwners: Set<String> = [

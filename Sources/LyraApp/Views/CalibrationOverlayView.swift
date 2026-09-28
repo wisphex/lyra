@@ -62,7 +62,7 @@ struct CalibrationOverlayView: View {
 
     @ViewBuilder
     private func runningView(in size: CGSize) -> some View {
-        if viewModel.calibrationMode == .webGazer9, let webGazer {
+        if (viewModel.calibrationMode == .webGazer9 || viewModel.calibrationMode == .macroZones5), let webGazer {
             switch webGazer.phase {
             case .precisionVerification(let timeRemaining, _, let accuracy):
                 verificationView(timeRemaining: timeRemaining, accuracy: accuracy, in: size)
@@ -579,7 +579,7 @@ private struct WebGazerPointView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHovered)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(point.isComplete ? "Calibration target \(point.id + 1) completed" : "Calibration target \(point.id + 1) of 9, \(point.clicks) of \(point.clicksRequired) clicks")
+        .accessibilityLabel(point.isComplete ? "Calibration target \(point.id + 1) completed" : "Calibration target \(point.id + 1), \(point.clicks) of \(point.clicksRequired) clicks")
         .accessibilityHint(point.isComplete ? "" : "Look directly at this target and click 5 times")
         .onHover { hovering in
             isHovered = hovering

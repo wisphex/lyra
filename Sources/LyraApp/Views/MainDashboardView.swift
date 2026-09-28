@@ -145,7 +145,7 @@ struct MainDashboardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "scope")
                         .font(.system(size: 12))
-                    Text(viewModel.isCalibrated ? "Recalibrate (9-Point)" : "Calibrate (9-Point)")
+                    Text(viewModel.isCalibrated ? "Recalibrate" : "Calibrate")
                         .font(.system(size: 13, weight: .medium, design: .default))
                 }
                 .padding(.horizontal, 16)
@@ -162,9 +162,9 @@ struct MainDashboardView: View {
         VStack(spacing: 12) {
             HStack {
                 settingToggleRow(
-                    title: "AutoLens Magnify",
-                    subtitle: "Cluster zoom on small controls",
-                    isOn: $viewModel.autoLensEnabled
+                    title: "Context Highlights",
+                    subtitle: "Menu bar, Dock, Stage Manager",
+                    isOn: $viewModel.contextualHighlightingEnabled
                 )
                 Divider()
                     .frame(height: 32)
@@ -188,15 +188,11 @@ struct MainDashboardView: View {
                 Divider()
                     .frame(height: 32)
                     .background(Color.white.opacity(0.06))
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.tap")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(red: 0.60, green: 0.60, blue: 0.62))
-                    Text("Dwell to activate targets")
-                        .font(.system(size: 11, design: .default))
-                        .foregroundStyle(Color(red: 0.60, green: 0.60, blue: 0.62))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                settingToggleRow(
+                    title: "AutoLens Magnify",
+                    subtitle: "Popup zoom list (optional)",
+                    isOn: $viewModel.autoLensEnabled
+                )
             }
         }
         .padding(16)

@@ -58,6 +58,8 @@ public actor LyraCoordinator {
     /// Opens the lens without being asked, when the gaze settles on a cluster of small
     /// controls. See `AutoLensPolicy` for why that is the right trigger.
     private var autoLens: AutoLensTracker
+    private var contextualResolver = ContextualRegionResolver()
+    private var contextualHighlightingEnabled: Bool = true
 
     /// Whether the lens currently on screen was opened by the policy rather than by the
     /// user. Only an automatic lens may close itself; one the user asked for stays until
@@ -102,7 +104,7 @@ public actor LyraCoordinator {
         gazeFilter: OneEuroFilter = OneEuroFilter(),
         noseFineTune: NoseFineTuneController = NoseFineTuneController(),
         riskPolicy: RiskPolicy = RiskPolicy(),
-        autoLensPolicy: AutoLensPolicy = .default
+        autoLensPolicy: AutoLensPolicy = AutoLensPolicy(isEnabled: false)
     ) {
         self.gazeProvider = gazeProvider
         self.speechProvider = speechProvider
@@ -252,6 +254,7 @@ public actor LyraCoordinator {
 
         startTargetSweeping()
         snapshot.isEngineRunning = true
+        snapshot.isSelectionModeActive = true
         publish(force: true)
     }
 
@@ -284,6 +287,8 @@ public actor LyraCoordinator {
         snapshot.selection = nil
         snapshot.committedTarget = nil
         snapshot.dwellProgress = nil
+        snapshot.contextualHighlight = nil
+        snapshot.inPlaceClusterCandidates = []
         snapshot.targetCount = 0
         snapshot.statusMessage = "Stopped"
         publish(force: true)
@@ -389,16 +394,32 @@ public actor LyraCoordinator {
 
     /// Resolves and stabilises the target under the gaze point.
     private func updateSelection(for point: LyraPoint, confidence: Double) {
-        guard snapshot.isSelectionModeActive else {
-            snapshot.selection = nil
-            snapshot.committedTarget = nil
-            snapshot.dwellProgress = nil
-            stabilizer.reset()
-            autoLens.reset()
-            return
-        }
-
+        snapshot.isSelectionModeActive = true
         let now = Date().timeIntervalSince1970
+
+        // 1. Contextual macOS region highlighting (Top Right, Top Left, Stage Manager, Dock)
+        if contextualHighlightingEnabled,
+           let contextual = contextualResolver.resolve(gazePoint: point, screenSize: screenSize, candidates: targets) {
+            snapshot.contextualHighlight = contextual
+
+            let candidate = contextual.candidate ?? TargetCandidate(
+                id: "contextual|\(contextual.kind.rawValue)|\(Int(contextual.frame.x)),\(Int(contextual.frame.y))",
+                frame: contextual.frame,
+                label: contextual.title,
+                role: contextual.kind.rawValue,
+                source: .screenRegion,
+                depth: 1,
+                isActionable: true,
+                action: .press
+            )
+            let directSelection = TargetSelection(candidate: candidate, distance: 0, confidence: confidence)
+            let outcome = stabilizer.update(selection: directSelection, at: now)
+            apply(outcome)
+            snapshot.inPlaceClusterCandidates = []
+            return
+        } else {
+            snapshot.contextualHighlight = nil
+        }
 
         // In lens mode the choice set is the lens, not the screen. Rows are large and
         // few, so a generous snap and no dwell requirement are both appropriate — the
@@ -420,22 +441,27 @@ public actor LyraCoordinator {
             return
         }
 
-        // Checked before the ordinary resolution below, so a lens that opens this frame
-        // is drawn this frame rather than one frame later.
-        //
-        // The radius is the *measured* calibration error, which is the honest answer to
-        // "how far off might this reading be". It is what makes the trigger adapt: a user
-        // with a steady head gets a lens that stays out of the way, and one whose tracker
-        // misses by 150 points gets it whenever two controls are plausibly in play.
-        let radius = max(calibrationMap.validationErrorPixels, autoLens.policy.clusterRadius)
-        if autoLens.updateClosed(gazePoint: point, candidates: targets, radius: radius, at: now) {
-            setZoom(true)
-            autoLensOpened = true
-            snapshot.targetsAreVisible = true
-            snapshot.statusMessage = "Magnifying — look at a row and say \"click\""
-            updateLensSelection(for: point, confidence: confidence)
-            publish(force: true)
-            return
+        // 2. In-place cluster candidates (highlights multiple nearby buttons in place on screen)
+        let clusterRadius = 110.0
+        let clusterCandidates = targets.filter { candidate in
+            candidate.isActionable
+                && candidate.area < (screenSize.area * 0.35)
+                && candidate.frame.distance(to: point) <= clusterRadius
+        }
+        snapshot.inPlaceClusterCandidates = clusterCandidates
+
+        // 3. AutoLens cluster zoom (disabled by default)
+        if autoLens.policy.isEnabled {
+            let radius = max(calibrationMap.validationErrorPixels, autoLens.policy.clusterRadius)
+            if autoLens.updateClosed(gazePoint: point, candidates: targets, radius: radius, at: now) {
+                setZoom(true)
+                autoLensOpened = true
+                snapshot.targetsAreVisible = true
+                snapshot.statusMessage = "Magnifying — look at a row and say \"click\""
+                updateLensSelection(for: point, confidence: confidence)
+                publish(force: true)
+                return
+            }
         }
 
         let selection = resolver.resolve(
@@ -445,7 +471,7 @@ public actor LyraCoordinator {
             gazeConfidence: confidence
         )
 
-        let outcome = stabilizer.update(selection: selection, at: Date().timeIntervalSince1970)
+        let outcome = stabilizer.update(selection: selection, at: now)
         apply(outcome)
     }
 
@@ -608,6 +634,8 @@ public actor LyraCoordinator {
             snapshot.selection = nil
             snapshot.committedTarget = nil
             snapshot.dwellProgress = nil
+            snapshot.contextualHighlight = nil
+            snapshot.inPlaceClusterCandidates = []
             snapshot.statusMessage = "Selection off"
             stabilizer.reset()
             publish(force: true)
@@ -616,6 +644,8 @@ public actor LyraCoordinator {
             snapshot.selection = nil
             snapshot.committedTarget = nil
             snapshot.dwellProgress = nil
+            snapshot.contextualHighlight = nil
+            snapshot.inPlaceClusterCandidates = []
             if zoomVisible { setZoom(false) }
             snapshot.statusMessage = "Selection cleared"
             stabilizer.reset()
@@ -862,6 +892,15 @@ public actor LyraCoordinator {
         snapshot.statusMessage = enabled
             ? "Auto-magnify on — the lens opens when you look at small controls"
             : "Auto-magnify off"
+        publish(force: true)
+    }
+
+    /// Turns contextual region highlighting on or off.
+    public func setContextualHighlightingEnabled(_ enabled: Bool) {
+        self.contextualHighlightingEnabled = enabled
+        if !enabled {
+            snapshot.contextualHighlight = nil
+        }
         publish(force: true)
     }
 

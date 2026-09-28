@@ -72,6 +72,12 @@ public struct LyraSnapshot: Sendable {
     public var statusMessage: String
     public var errorMessage: String?
 
+    /// Contextual macOS zone highlight (e.g. status bar, menu bar, stage manager, dock).
+    public var contextualHighlight: ContextualHighlight?
+
+    /// In-place cluster candidates around the gaze point highlighted directly on screen.
+    public var inPlaceClusterCandidates: [TargetCandidate]
+
     public init(
         trackingState: TrackingState = .idle,
         isEngineRunning: Bool = false,
@@ -88,7 +94,9 @@ public struct LyraSnapshot: Sendable {
         lastTranscript: String = "—",
         lastCommand: LyraCommand? = nil,
         statusMessage: String = "Ready",
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        contextualHighlight: ContextualHighlight? = nil,
+        inPlaceClusterCandidates: [TargetCandidate] = []
     ) {
         self.trackingState = trackingState
         self.isEngineRunning = isEngineRunning
@@ -106,5 +114,7 @@ public struct LyraSnapshot: Sendable {
         self.lastCommand = lastCommand
         self.statusMessage = statusMessage
         self.errorMessage = errorMessage
+        self.contextualHighlight = contextualHighlight
+        self.inPlaceClusterCandidates = inPlaceClusterCandidates
     }
 }
